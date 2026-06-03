@@ -80,7 +80,7 @@ class FDADrugCollector:
     
     def build_search_query(self, last_collection_time: Optional[str] = None) -> str:
         """
-        构建FDA API搜索查询
+        构建FDA API搜索查询 - 使用更全面的搜索策略
         
         Args:
             last_collection_time: 最后采集时间（用于增量更新）
@@ -88,12 +88,41 @@ class FDADrugCollector:
         Returns:
             搜索查询字符串
         """
-        # 基础查询：直接搜索抗肿瘤药物
-        # 不使用基因列表和肿瘤类型列表，直接检索所有抗肿瘤相关药物
-        # drugsfda端点使用简单关键词搜索
+        # 构建更全面的抗肿瘤药物查询
+        # 使用多种可能的关键词组合，确保捕获尽可能多的抗肿瘤药物
+        cancer_keywords = [
+            'cancer', 'tumor', 'neoplasm', 'malignancy',
+            'oncology', 'antineoplastic', 'chemotherapy',
+            'carcinoma', 'lymphoma', 'leukemia', 'melanoma',
+            'nsclc', 'sclc', 'multiple myeloma', 'aml', 'cll'
+        ]
         
-        # 使用更宽泛的抗肿瘤关键词组合
-        query = 'cancer'
+        # 构建OR查询
+        query_parts = []
+        
+        # 添加癌症相关查询
+        for keyword in cancer_keywords:
+            query_parts.append(keyword)
+        
+        # 还可以尝试添加作用机制相关关键词，提高靶向/免疫药物召回率
+        mechanism_keywords = [
+            'kinase inhibitor', 'checkpoint inhibitor', 'monoclonal antibody',
+            'antibody-drug conjugate', 'immunotherapy', 'targeted therapy'
+        ]
+        
+        for keyword in mechanism_keywords:
+            query_parts.append(keyword)
+        
+        # 组合查询
+        query = ' OR '.join(query_parts)
+        
+        # 如果是增量更新，添加时间筛选
+        if last_collection_time:
+            try:
+                last_date = datetime.strptime(last_collection_time, '%Y-%m-%d')
+                query += f' AND submission_status_date:[{last_date.strftime("%Y%m%d")} TO *]'
+            except:
+                pass
         
         return query
     
@@ -222,7 +251,7 @@ class FDADrugCollector:
     
     def _parse_single_product(self, result: Dict, product: Dict) -> Optional[Dict]:
         """
-        解析单个产品数据
+        解析单个产品数据 - 改进版，保存所有FDA提交信息
         
         Args:
             result: API结果
@@ -235,14 +264,27 @@ class FDADrugCollector:
             # 提取申请信息
             application_number = result.get('application_number', '')
             
-            # 提取批准日期 - 从submissions中找APPROVED或AP状态的日期
-            approval_date = ''
+            # 提取所有提交，包含批准日期和相关信息（用于后续适应症日期匹配）
+            all_submissions = []
             submissions = result.get('submissions', [])
+            initial_approval_date = ''
+            
             for submission in submissions:
                 status = submission.get('submission_status', '')
-                if status in ('APPROVED', 'AP'):
-                    approval_date = submission.get('submission_status_date', '')
-                    break
+                submission_type = submission.get('submission_type', '')
+                status_date = submission.get('submission_status_date', '')
+                
+                # 获取初始批准日期
+                if status in ('APPROVED', 'AP') and submission_type in ('ORIG', 'SUPPL') and not initial_approval_date:
+                    initial_approval_date = status_date
+                
+                all_submissions.append({
+                    'status': status,
+                    'type': submission_type,
+                    'date': status_date,
+                    'review_priority': submission.get('review_priority', ''),
+                    'submission_class_code': submission.get('submission_class_code', '')
+                })
             
             # 提取申请人
             applicant = result.get('sponsor_name', '')
@@ -266,7 +308,7 @@ class FDADrugCollector:
             # 提取作用机制（需要从说明书获取）
             mechanism_of_action = ''
             
-            # 构建基本数据
+            # 构建基本数据 - 保存所有提交信息供后续使用
             drug_data = {
                 'regulatory_agency': 'FDA',
                 'drug_name_en': brand_name_en,
@@ -278,7 +320,8 @@ class FDADrugCollector:
                 'applicant': applicant,
                 'application_number': application_number,
                 'approval_number': application_number,
-                'approval_date': approval_date,
+                'approval_date': initial_approval_date,
+                'all_fda_submissions': all_submissions,  # 保存所有提交记录
                 'indication': indication,
                 'dosage_form': dosage_form,
                 'route_of_administration': route_of_administration,
@@ -391,101 +434,134 @@ class FDADrugCollector:
     
     def _is_cancer_drug(self, drug_data: Dict) -> bool:
         """
-        检查是否为抗肿瘤靶向或免疫药物
-        
-        只保留以下类型的药物：
-        1. 免疫检查点抑制剂 (PD-1, PD-L1, CTLA-4)
-        2. 单克隆抗体 (抗肿瘤单抗)
-        3. ADC药物 (抗体药物偶联物)
-        4. 靶向小分子药物 (EGFR, ALK, BRAF, MEK, BCL-2等抑制剂)
+        检查是否为抗肿瘤药物（改进版）
+        大幅放宽判断条件，提高召回率
         
         Args:
             drug_data: 药物数据
             
         Returns:
-            是否为抗肿瘤靶向/免疫药物
+            是否为抗肿瘤药物
         """
         indication = drug_data.get('indication', '').lower()
         moa = drug_data.get('mechanism_of_action', '').lower()
+        brand_name = drug_data.get('brand_name_en', '').lower()
+        generic_name = drug_data.get('generic_name_en', '').lower()
         
-        # 定义必须排除的非抗肿瘤药物类别
+        # 首先明确排除的非抗肿瘤药物
         excluded_keywords = [
             'anemia', 'chronic kidney disease', 'hepatitis', 'hiv', 'influenza',
             'antibiotic', 'antifungal', 'antiviral', 'vaccine',
-            'radiopharmaceutical', 'pet imaging', 'diagnostic agent',
-            'contrast agent', 'blood product', 'coagulation',
+            'diagnostic agent', 'contrast agent', 'blood product', 'coagulation',
             'cardiovascular', 'hypertension', 'diabetes', 'obesity',
             'neurological', 'seizure', 'pain management', 'anesthetic',
             'anticoagulant', 'antiplatelet', 'cholesterol',
             'bone density', 'osteoporosis', 'hormone replacement',
             'fertility', 'contraceptive', 'glaucoma',
-            # 严格排除非抗肿瘤药物
             'nausea', 'vomiting', 'emesis', 'antiemetic', 'palonosetron', 'netupitant',
             'contraception', 'uterine fibroid', 'endometriosis', 'menorrhagia',
             'heavy menstrual', 'gynecological',
             'complement', 'factor d', 'paroxysmal nocturnal hemoglobinuria', 'pnh',
             'immunoglobulin', 'autoimmune', 'pemphigus', 'immune thrombocytopenia',
-            'hemophilia', 'bleeding disorder',
-            'myelofibrosis', 'myeloproliferative', 'polycythemia vera', 'essential thrombocythemia',
+            'hemophilia', 'bleeding disorder'
         ]
         
+        has_excluded = False
         for keyword in excluded_keywords:
             if keyword in indication:
-                return False
+                has_excluded = True
+                break
         
-        # 定义必须包含的抗肿瘤/靶向/免疫关键词
-        # 优先检查机制（moa），因为适应症可能不明确
-        cancer_moa_keywords = [
-            # 免疫检查点
-            'pd-1', 'pd-l1', 'pd-l2', 'ctla-4', 'lag-3', 'tim-3', 'tigit',
-            'checkpoint inhibitor', 'immune checkpoint',
-            # 单克隆抗体 - 抗肿瘤
-            'monoclonal antibody', 'mab', 'immunoglobulin',
-            # ADC
-            'antibody-drug conjugate', 'adc ',
-            # 激酶抑制剂
-            'kinase inhibitor', 'tyrosine kinase', 'serine/threonine kinase',
-            'egfr', 'her2', 'her3', 'her4', 'alk', 'ros1', 'braf', 
-            'mek', 'mek1', 'mek2', 'mek inhibitor',
-            'kras', 'kras g12c', 'ntrk', 'ret', 'met', 'fgfr',
-            'vegfr', 'bcr-abl', 'btk', 'pi3k', 'mtor', 'aurora kinase',
-            'cdk4', 'cdk6', 'parp', 'hdac', 'dnmt', 'bcl-2', 'bcl-xl',
-            # 抗体类
-            'cd20', 'cd30', 'cd38', 'cd52', 'cd79b', 'bcma', 'gprc5d',
-            # 其他肿瘤相关
-            'topoisomerase', 'microtubule', 'alkylating', 'antimetabolite',
-            'hormone receptor', 'aromatase inhibitor', 'anti-androgen',
-            'gnrh', 'sst2', 'somatostatin receptor',
-            # 放射性药物
-            'radioligand', 'radiopharmaceutical', 'radioactive',
+        # 如果有排除关键词，但同时有强烈的癌症关键词，仍然保留
+        cancer_signals = False
+        strong_cancer_keywords = [
+            'malignancy', 'carcinoma', 'lymphoma', 'leukemia', 'melanoma',
+            'myeloma', 'nsclc', 'sclc', 'acute myeloid', 'chronic lymphocytic',
+            'hodgkin', 'non-small cell', 'small cell', 'multiple myeloma',
+            'aml', 'cll', 'mcl', 'fl', 'dlbcl', 'glioblastoma', 'gastrointestinal stromal'
         ]
         
-        for keyword in cancer_moa_keywords:
-            if keyword in moa:
-                return True
+        for keyword in strong_cancer_keywords:
+            if keyword in indication or keyword in moa:
+                cancer_signals = True
+                break
         
-        # 检查适应症中的癌症关键词
-        cancer_indication_keywords = [
+        # 有强癌症信号的药物，即使有排除关键词也保留
+        if cancer_signals:
+            return True
+        
+        # 有排除关键词且无强癌症信号，排除
+        if has_excluded:
+            return False
+        
+        # 检查广谱癌症关键词
+        all_cancer_keywords = [
             'cancer', 'tumor', 'neoplasm', 'malignancy', 'carcinoma',
             'lymphoma', 'leukemia', 'sarcoma', 'melanoma', 'myeloma',
-            'nsclc', 'non-small cell lung', 'small cell lung',
+            'nsclc', 'sclc', 'non-small cell lung', 'small cell lung',
             'breast cancer', 'colorectal cancer', 'prostate cancer',
             'pancreatic', 'ovarian', 'endometrial', 'cervical',
             'bladder', 'renal cell', 'kidney cancer', 'hepatocellular',
             'glioma', 'glioblastoma', 'astrocytoma', 'medulloblastoma',
-            'multiple myeloma', 'chronic lymphocytic leukemia', 'cll',
-            'acute myeloid leukemia', 'aml', 'hodgkin',
-            'Waldenstrom', 'mantle cell', 'follicular lymphoma',
+            'multiple myeloma', 'chronic lymphocytic', 'cll',
+            'acute myeloid', 'aml', 'hodgkin',
+            'waldenstrom', 'mantle cell', 'follicular lymphoma',
             'cutaneous', 'merkel cell', 'kaposi sarcoma',
-            'gastrointestinal stromal', 'gist',
-            'neuroendocrine', 'pheochromocytoma', 'paraganglioma'
+            'gastrointestinal stromal', 'gist', 'neuroendocrine',
+            'pheochromocytoma', 'paraganglioma', 'myelofibrosis',
+            'polycythemia vera', 'essential thrombocythemia'
         ]
         
-        for keyword in cancer_indication_keywords:
+        for keyword in all_cancer_keywords:
             if keyword in indication:
-                # 如果有癌症关键词但没有明确的靶向机制，检查通用机制
-                if any(k in moa for k in ['kinase', 'antibody', 'inhibitor', 'receptor', 'receptor-1', 'receptor-2']):
-                    return True
+                return True
+        
+        # 检查作用机制关键词
+        moa_keywords = [
+            # 免疫检查点
+            'pd-1', 'pd-l1', 'pd-l2', 'ctla-4', 'lag-3', 'tim-3', 'tigit',
+            'checkpoint inhibitor', 'immune checkpoint',
+            # 单克隆抗体
+            'monoclonal antibody', 'mab',
+            # ADC
+            'antibody-drug conjugate', 'adc',
+            # 激酶抑制剂
+            'kinase inhibitor', 'tyrosine kinase', 'kinase',
+            'egfr', 'her2', 'her3', 'her4', 'alk', 'ros1', 'braf', 'mek',
+            'kras', 'ntrk', 'ret', 'met', 'fgfr', 'vegfr', 'btk',
+            'pi3k', 'mtor', 'cdk', 'parp', 'hdac', 'dnmt', 'bcl-2',
+            # 靶点
+            'cd20', 'cd30', 'cd38', 'cd52', 'cd79b', 'bcma', 'gprc5d',
+            # 其他肿瘤药物
+            'topoisomerase', 'microtubule', 'alkylating', 'antimetabolite',
+            'hormone receptor', 'aromatase', 'anti-androgen',
+            'radioligand', 'radiopharmaceutical'
+        ]
+        
+        for keyword in moa_keywords:
+            if keyword in moa:
+                return True
+        
+        # 检查药物名称中的线索
+        drug_name_keywords = [
+            'mab', 'nib', 'umab', 'zumab', 'ximab', 'zumab', 'tuzumab',
+            'trastuzumab', 'pembrolizumab', 'nivolumab', 'atezolizumab',
+            'durvalumab', 'ipilimumab', 'cetuximab', 'rituximab',
+            'ibrutinib', 'imatinib', 'dasatinib', 'erlotinib',
+            'gefitinib', 'osimertinib', 'crizotinib'
+        ]
+        
+        for keyword in drug_name_keywords:
+            if keyword in brand_name or keyword in generic_name:
+                return True
+        
+        # 放宽最后的判断：只要有任何抗肿瘤相关线索就保留
+        # 例如：药物有indication且包含"treatment"，或者moa中包含"inhibitor"和"receptor"
+        if indication and 'treatment' in indication:
+            return True
+        
+        if moa and ('inhibitor' in moa or 'receptor' in moa or 'antibody' in moa):
+            return True
         
         return False
     
@@ -868,8 +944,12 @@ class FDADrugCollector:
                 'detail_url', 'data_collection_time'
             ]
             
-            # 过滤只保留数据库表存在的字段
-            filtered_data = {k: v for k, v in drug_data.items() if k in db_fields}
+            # 过滤只保留数据库表存在的字段（排除临时字段）
+            exclude_temp_fields = ['all_fda_submissions', 'approval_history']
+            filtered_data = {
+                k: v for k, v in drug_data.items() 
+                if k in db_fields and k not in exclude_temp_fields
+            }
             
             # 合并适应症英文和中文翻译
             indication = filtered_data.get('indication', '')
@@ -919,7 +999,7 @@ class FDADrugCollector:
     
     def collect_full(self) -> Dict:
         """
-        全量采集FDA已批准药物
+        全量采集FDA已批准药物 - 改进版
         
         Returns:
             采集结果统计
@@ -938,7 +1018,7 @@ class FDADrugCollector:
         skip = 0
         total_results = 0
         
-        max_records = 200  # 限制最大采集数量，避免超时
+        max_records = 1000  # 大幅增加采集数量，获取更多药物
         
         while skip < max_records:
             # 获取数据
@@ -959,19 +1039,15 @@ class FDADrugCollector:
             
             # 处理每条药物记录
             for drug in drugs:
-                # 获取FDA历史批准信息（补充不同适应症的获批日期）
-                brand_name = drug.get('brand_name_en', '')
-                generic_name = drug.get('generic_name_en', '')
-                
-                if brand_name and generic_name:
-                    try:
-                        approval_history = self.fetch_fda_approval_history(brand_name, generic_name)
-                        if approval_history:
-                            # 将历史信息保存到药物数据中
-                            drug['approval_history'] = approval_history
-                            logger.info(f"{brand_name}: 获取到 {len(approval_history)} 条历史批准记录")
-                    except Exception as e:
-                        logger.warning(f"获取 {brand_name} 历史批准信息失败: {e}")
+                # 获取所有FDA批准日期（从已保存的submissions）
+                all_submissions = drug.get('all_fda_submissions', [])
+                # 整理并排序所有批准日期
+                approval_dates = []
+                for subm in all_submissions:
+                    if subm.get('status') in ('APPROVED', 'AP') and subm.get('date'):
+                        approval_dates.append(subm.get('date'))
+                # 去重并排序
+                approval_dates = sorted(list(set(approval_dates)))
                 
                 # 翻译
                 drug = self.translate_drug_data(drug)
@@ -979,18 +1055,23 @@ class FDADrugCollector:
                 # 按适应症拆分（多适应症分行存储）
                 split_drugs = self.split_by_indication(drug)
                 
-                # 如果有历史批准信息，为每个拆分后的记录匹配对应的获批日期
-                if 'approval_history' in drug and len(split_drugs) > 1:
+                # 改进的适应症日期匹配逻辑
+                if len(split_drugs) > 1 and len(approval_dates) > 1:
+                    # 有多个适应症和多个批准日期时，尝试智能分配
+                    for i, split_drug in enumerate(split_drugs):
+                        # 第一个适应症使用最早的批准日期
+                        # 后续的适应症尝试使用之后的日期
+                        if i < len(approval_dates):
+                            split_drug['approval_date'] = approval_dates[i]
+                            split_drug['previous_fda_approvals'] = f"多个批准日期可用，使用第{i+1}个日期: {approval_dates[i]}"
+                        else:
+                            # 没有足够日期，使用最后一个
+                            split_drug['approval_date'] = approval_dates[-1]
+                elif len(approval_dates) >= 1:
+                    # 没有多个日期，全部使用同一个，但在备注中说明所有日期
+                    date_note = f"所有日期: {', '.join(approval_dates)}"
                     for split_drug in split_drugs:
-                        split_indication = split_drug.get('indication', '').lower()
-                        # 尝试匹配历史记录
-                        for hist in drug['approval_history']:
-                            hist_ind = hist.get('indication', '').lower()
-                            # 简单匹配：如果适应症关键词相似
-                            if any(kw in split_indication and kw in hist_ind for kw in ['nsclc', 'adjuvant', 'metastatic', 't790m', 'combination', 'locally advanced']):
-                                split_drug['approval_date'] = hist.get('approval_date', split_drug.get('approval_date', ''))
-                                split_drug['previous_fda_approvals'] = f"获批日期: {hist.get('approval_date', '')}, 来源: {hist.get('source', '')}"
-                                break
+                        split_drug['previous_fda_approvals'] = date_note
                 
                 # 保存每条拆分后的记录
                 for split_drug in split_drugs:
