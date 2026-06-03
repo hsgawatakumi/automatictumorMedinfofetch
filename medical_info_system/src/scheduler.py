@@ -24,6 +24,7 @@ from src.utils.translator import TranslationService, create_translation_service
 from src.collectors.fda_collector import FDADrugCollector, create_fda_collector
 from src.collectors.pubmed_collector import PubMedCollector
 from src.collectors.clinical_trials_collector import ClinicalTrialsCollector
+from src.collectors.nmpa_cde_collector import NMPACDECollector, create_nmpa_cde_collector
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +100,13 @@ class SchedulerManager:
             self.translation_service
         )
         
+        # NMPA/CDE采集器
+        self.collectors['nmpa_cde'] = create_nmpa_cde_collector(
+            self.db_manager,
+            self.config_manager,
+            self.translation_service
+        )
+        
         logger.info(f"已初始化 {len(self.collectors)} 个采集器")
     
     def _job_executed_listener(self, event):
@@ -140,14 +148,26 @@ class SchedulerManager:
     def _run_nmpa_approved(self):
         """运行NMPA已批准药物采集"""
         logger.info("开始执行NMPA已批准药物采集任务")
-        # NMPA采集逻辑（待实现）
-        logger.info("NMPA采集任务完成")
+        
+        try:
+            collector = self.collectors.get('nmpa_cde')
+            if collector:
+                result = collector.run('nmpa')
+                logger.info(f"NMPA采集完成: {result}")
+        except Exception as e:
+            logger.error(f"NMPA采集任务失败: {e}")
     
     def _run_cde_special(self):
         """运行CDE特殊审评品种采集"""
         logger.info("开始执行CDE特殊审评品种采集任务")
-        # CDE采集逻辑（待实现）
-        logger.info("CDE特殊品种采集任务完成")
+        
+        try:
+            collector = self.collectors.get('nmpa_cde')
+            if collector:
+                result = collector.run('cde')
+                logger.info(f"CDE特殊品种采集完成: {result}")
+        except Exception as e:
+            logger.error(f"CDE特殊品种采集任务失败: {e}")
     
     def _run_academic_papers(self):
         """运行学术文献检索"""

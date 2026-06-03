@@ -22,6 +22,7 @@ from src.utils.http_client import RequestManager
 from src.collectors.fda_collector import FDADrugCollector, create_fda_collector
 from src.collectors.pubmed_collector import PubMedCollector
 from src.collectors.clinical_trials_collector import ClinicalTrialsCollector
+from src.collectors.nmpa_cde_collector import NMPACDECollector, create_nmpa_cde_collector
 
 # 页面配置
 st.set_page_config(
@@ -133,6 +134,13 @@ class MedicalInfoSystem:
         except Exception as e:
             logging.error(f"临床试验采集器初始化失败: {e}")
         
+        try:
+            collectors['nmpa_cde'] = create_nmpa_cde_collector(
+                self.db_manager, self.config_manager, self.translation_service
+            )
+        except Exception as e:
+            logging.error(f"NMPA/CDE采集器初始化失败: {e}")
+        
         return collectors
     
     def run_collector(self, module_key: str) -> dict:
@@ -158,11 +166,24 @@ class MedicalInfoSystem:
         
         collector = self.collectors.get(module_key)
         
-        # fda_nda 使用 fda_approved 的采集器，但模式不同
-        if not collector and module_key == 'fda_nda':
-            collector = self.collectors.get('fda_approved')
+        # 确定实际使用的采集器和模式
+        actual_collector = None
+        run_mode = None
         
-        if not collector:
+        if module_key in ['fda_nda']:
+            actual_collector = self.collectors.get('fda_approved')
+            run_mode = 'nda'
+        elif module_key in ['nmpa_approved']:
+            actual_collector = self.collectors.get('nmpa_cde')
+            run_mode = 'nmpa'
+        elif module_key in ['cde_special']:
+            actual_collector = self.collectors.get('nmpa_cde')
+            run_mode = 'cde'
+        else:
+            actual_collector = collector
+            run_mode = None
+        
+        if not actual_collector:
             result['message'] = f'模块 {module_key} 的采集器未初始化'
             return result
         
@@ -170,10 +191,10 @@ class MedicalInfoSystem:
             logging.info(f"手动启动采集模块: {module_key}")
             
             # 根据模块选择正确的运行模式
-            if module_key == 'fda_nda':
-                run_result = collector.run(mode='nda')
+            if run_mode:
+                run_result = actual_collector.run(mode=run_mode)
             else:
-                run_result = collector.run()
+                run_result = actual_collector.run()
             
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
@@ -1238,14 +1259,14 @@ def show_status_page():
             'key': 'nmpa_approved',
             'icon': '🇨🇳',
             'desc': '采集国家药监局批准的抗肿瘤药物信息',
-            'collector_available': False,
+            'collector_available': 'nmpa_cde' in system.collectors,
         },
         {
             'name': 'CDE特殊品种',
             'key': 'cde_special',
             'icon': '⭐',
             'desc': '采集CDE优先审评/突破性治疗品种信息',
-            'collector_available': False,
+            'collector_available': 'nmpa_cde' in system.collectors,
         },
         {
             'name': '学术文献检索',
