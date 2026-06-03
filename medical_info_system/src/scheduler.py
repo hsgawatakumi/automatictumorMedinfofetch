@@ -25,6 +25,7 @@ from src.collectors.fda_collector import FDADrugCollector, create_fda_collector
 from src.collectors.pubmed_collector import PubMedCollector
 from src.collectors.clinical_trials_collector import ClinicalTrialsCollector
 from src.collectors.nmpa_cde_collector import NMPACDECollector, create_nmpa_cde_collector
+from src.collectors.conference_collector import ConferenceAbstractCollector, create_conference_collector
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +108,13 @@ class SchedulerManager:
             self.translation_service
         )
         
+        # 会议摘要采集器
+        self.collectors['conference_abstracts'] = create_conference_collector(
+            self.db_manager,
+            self.config_manager,
+            self.translation_service
+        )
+        
         logger.info(f"已初始化 {len(self.collectors)} 个采集器")
     
     def _job_executed_listener(self, event):
@@ -142,8 +150,14 @@ class SchedulerManager:
     def _run_fda_nda(self):
         """运行FDA NDA申请采集"""
         logger.info("开始执行FDA NDA申请采集任务")
-        # NDA采集逻辑（待实现）
-        logger.info("FDA NDA采集任务完成")
+        
+        try:
+            collector = self.collectors.get('fda_approved')
+            if collector:
+                result = collector.run(mode='nda')
+                logger.info(f"FDA NDA采集完成: {result}")
+        except Exception as e:
+            logger.error(f"FDA NDA采集任务失败: {e}")
     
     def _run_nmpa_approved(self):
         """运行NMPA已批准药物采集"""
@@ -196,8 +210,14 @@ class SchedulerManager:
     def _run_conference_abstracts(self):
         """运行会议摘要采集"""
         logger.info("开始执行会议摘要采集任务")
-        # 会议摘要采集逻辑（待实现）
-        logger.info("会议摘要采集任务完成")
+        
+        try:
+            collector = self.collectors.get('conference_abstracts')
+            if collector:
+                result = collector.run()
+                logger.info(f"会议摘要采集完成: {result}")
+        except Exception as e:
+            logger.error(f"会议摘要采集任务失败: {e}")
     
     def setup_jobs(self):
         """设置定时任务"""

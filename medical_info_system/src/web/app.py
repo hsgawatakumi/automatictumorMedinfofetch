@@ -23,6 +23,7 @@ from src.collectors.fda_collector import FDADrugCollector, create_fda_collector
 from src.collectors.pubmed_collector import PubMedCollector
 from src.collectors.clinical_trials_collector import ClinicalTrialsCollector
 from src.collectors.nmpa_cde_collector import NMPACDECollector, create_nmpa_cde_collector
+from src.collectors.conference_collector import ConferenceAbstractCollector, create_conference_collector
 
 # 页面配置
 st.set_page_config(
@@ -140,6 +141,13 @@ class MedicalInfoSystem:
             )
         except Exception as e:
             logging.error(f"NMPA/CDE采集器初始化失败: {e}")
+            
+        try:
+            collectors['conference_abstracts'] = create_conference_collector(
+                self.db_manager, self.config_manager, self.translation_service
+            )
+        except Exception as e:
+            logging.error(f"会议摘要采集器初始化失败: {e}")
         
         return collectors
     
@@ -1281,6 +1289,13 @@ def show_status_page():
             'icon': '🔬',
             'desc': '通过ClinicalTrials.gov API采集抗肿瘤药物临床试验信息',
             'collector_available': 'clinical_trials' in system.collectors,
+        },
+        {
+            'name': '会议摘要采集',
+            'key': 'conference_abstracts',
+            'icon': '📣',
+            'desc': '采集ASCO/ESMO/AACR等肿瘤学会议摘要',
+            'collector_available': 'conference_abstracts' in system.collectors,
         },
     ]
     
