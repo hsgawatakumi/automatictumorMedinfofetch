@@ -260,6 +260,38 @@ class DatabaseManager:
         )
         """)
         
+        # 创建CDE特殊品种表
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS cde_special_drugs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cde_id TEXT,
+            drug_name TEXT,
+            drug_name_en TEXT,
+            drug_type TEXT,
+            indication TEXT,
+            applicant TEXT,
+            application_date TEXT,
+            approval_date TEXT,
+            status TEXT,
+            priority_type TEXT,
+            breakthrough_type TEXT,
+            trial_info TEXT,
+            molecular_target TEXT,
+            gene_marker TEXT,
+            reference_drug TEXT,
+            description TEXT,
+            detail_url TEXT,
+            created_at TEXT,
+            updated_at TEXT,
+            acceptance_number TEXT
+        )
+        """)
+        # 尝试添加受理号字段（如果已存在会忽略）
+        try:
+            cursor.execute("ALTER TABLE cde_special_drugs ADD COLUMN acceptance_number TEXT")
+        except Exception as e:
+            pass
+        
         # 创建翻译统计表
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS translation_stats (
@@ -283,8 +315,8 @@ class DatabaseManager:
             "CREATE INDEX IF NOT EXISTS idx_approved_drugs_moa ON approved_drugs(mechanism_of_action)",
             "CREATE INDEX IF NOT EXISTS idx_nda_drugs_status ON nda_drugs(nda_status)",
             "CREATE INDEX IF NOT EXISTS idx_nda_drugs_date ON nda_drugs(nda_submission_date)",
-            "CREATE INDEX IF NOT EXISTS idx_cde_special_type ON cde_special_drugs(program_type)",
-            "CREATE INDEX IF NOT EXISTS idx_cde_special_date ON cde_special_drugs(inclusion_date)",
+            "CREATE INDEX IF NOT EXISTS idx_cde_special_type ON cde_special_drugs(drug_type)",
+            "CREATE INDEX IF NOT EXISTS idx_cde_special_date ON cde_special_drugs(application_date)",
             "CREATE INDEX IF NOT EXISTS idx_academic_papers_journal ON academic_papers(journal_name)",
             "CREATE INDEX IF NOT EXISTS idx_academic_papers_date ON academic_papers(publication_date)",
             "CREATE INDEX IF NOT EXISTS idx_academic_papers_gene ON academic_papers(target_gene)",

@@ -854,20 +854,25 @@ def show_data_page():
         st.markdown("### CDE优先审评/突破性治疗品种")
         
         cde_drugs = system.db_manager.execute_query(
-            "SELECT * FROM cde_special_drugs ORDER BY inclusion_date DESC LIMIT 100"
+            "SELECT * FROM cde_special_drugs ORDER BY application_date DESC LIMIT 100"
         )
         
         if cde_drugs:
             display_data = []
             for drug in cde_drugs:
                 display_data.append({
-                    '项目类型': drug.get('program_type', ''),
-                    '药品名称(中文)': drug.get('drug_name_cn', ''),
+                    '项目类型': drug.get('drug_type', ''),
+                    '药品名称(中文)': drug.get('drug_name', ''),
+                    '药品名称(英文)': drug.get('drug_name_en', ''),
+                    '受理号': drug.get('acceptance_number', ''),
                     '申请人': drug.get('applicant', ''),
-                    '纳入日期': drug.get('inclusion_date', ''),
-                    '纳入理由': drug.get('inclusion_reason', ''),
+                    '申请日期': drug.get('application_date', ''),
+                    '批准日期': drug.get('approval_date', ''),
+                    '状态': drug.get('status', ''),
                     '适应症': drug.get('indication', ''),
-                    '审评状态': drug.get('review_status', ''),
+                    '分子靶点': drug.get('molecular_target', ''),
+                    '基因标记': drug.get('gene_marker', ''),
+                    '详细描述': drug.get('description', ''),
                 })
             
             st.dataframe(pd.DataFrame(display_data), use_container_width=True)
