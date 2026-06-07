@@ -96,9 +96,9 @@ def collect_full_data():
 
         # 采集突破性治疗公示
         logger.info("\n" + "=" * 70)
-        logger.info("第一部分：采集纳入突破性治疗品种名单（前200条）")
+        logger.info("第一部分：采集纳入突破性治疗品种名单（前250条）")
         logger.info("=" * 70)
-        breakthrough_drugs = collect_list(page, "突破性治疗公示", "纳入突破性治疗品种名单", "突破性治疗", target_count=200)
+        breakthrough_drugs = collect_list(page, "突破性治疗公示", "纳入突破性治疗品种名单", "突破性治疗", target_count=250)
         all_drugs.extend(breakthrough_drugs)
         logger.info(f"突破性治疗采集完成: {len(breakthrough_drugs)} 条，其中抗肿瘤: {len([d for d in breakthrough_drugs if d['是否抗肿瘤']])} 条")
 
@@ -106,9 +106,9 @@ def collect_full_data():
 
         # 采集优先审评公示
         logger.info("\n" + "=" * 70)
-        logger.info("第二部分：采集纳入优先审评品种名单（前200条）")
+        logger.info("第二部分：采集纳入优先审评品种名单（前250条）")
         logger.info("=" * 70)
-        priority_drugs = collect_list(page, "优先审评公示", "纳入优先审评品种名单", "优先审评", target_count=200)
+        priority_drugs = collect_list(page, "优先审评公示", "纳入优先审评品种名单", "优先审评", target_count=250)
         all_drugs.extend(priority_drugs)
         logger.info(f"优先审评采集完成: {len(priority_drugs)} 条，其中抗肿瘤: {len([d for d in priority_drugs if d['是否抗肿瘤']])} 条")
 
