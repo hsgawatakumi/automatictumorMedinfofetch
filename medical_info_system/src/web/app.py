@@ -1163,16 +1163,36 @@ def show_export_page():
             if data_type == "CDE特殊品种" and export_format == "Excel":
                 df = pd.DataFrame(data)
                 
+                # CDE特殊品种的导出列（中英文双语列名）
+                cde_export_columns = {
+                    'drug_name': '药物名称',
+                    'drug_name_en': '英文药名',
+                    'drug_type': '名单类型',
+                    'acceptance_number': '受理号',
+                    'applicant': '申请人',
+                    'indication': '适应症',
+                    'molecular_target': '分子靶点',
+                    'gene_marker': '基因标志物',
+                    'application_date': '申请日期',
+                    'approval_date': '批准日期',
+                    'status': '状态'
+                }
+                
+                # 选择并重命名列
+                available_cols = [col for col in cde_export_columns.keys() if col in df.columns]
+                df_export = df[available_cols].rename(columns=cde_export_columns)
+                
                 # 分别筛选优先审评和突破性治疗
-                priority_df = df[df['drug_type'] == '优先审评'] if 'drug_type' in df.columns else df
-                breakthrough_df = df[df['drug_type'] == '突破性治疗'] if 'drug_type' in df.columns else pd.DataFrame()
+                priority_df = df_export[df_export['名单类型'].str.contains('优先', na=False)] if '名单类型' in df_export.columns else df_export
+                breakthrough_df = df_export[df_export['名单类型'].str.contains('突破性', na=False)] if '名单类型' in df_export.columns else pd.DataFrame()
                 
                 file_path = os.path.join(full_exports_path, f"{filename}.xlsx")
                 
                 # 使用ExcelWriter写入多个sheet
                 with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
-                    priority_df.to_excel(writer, sheet_name='优先审评', index=False)
-                    if not breakthrough_df.empty:
+                    if len(priority_df) > 0:
+                        priority_df.to_excel(writer, sheet_name='优先审评', index=False)
+                    if len(breakthrough_df) > 0:
                         breakthrough_df.to_excel(writer, sheet_name='突破性治疗', index=False)
                 
                 total_count = len(priority_df) + len(breakthrough_df)
@@ -1182,11 +1202,23 @@ def show_export_page():
                 
                 # 显示预览
                 st.markdown("#### 数据预览 - 优先审评")
-                if not priority_df.empty:
+                if len(priority_df) > 0:
                     st.dataframe(priority_df.head(10), use_container_width=True)
-                if not breakthrough_df.empty:
+                if len(breakthrough_df) > 0:
                     st.markdown("#### 数据预览 - 突破性治疗")
                     st.dataframe(breakthrough_df.head(10), use_container_width=True)
+                
+                # 显示统计信息
+                st.markdown("#### 字段填充统计")
+                if '分子靶点' in df_export.columns:
+                    target_filled = df_export['分子靶点'].notna() & (df_export['分子靶点'] != '')
+                    st.write(f"- 分子靶点已填写: {target_filled.sum()}/{len(df_export)}")
+                if '基因标志物' in df_export.columns:
+                    marker_filled = df_export['基因标志物'].notna() & (df_export['基因标志物'] != '')
+                    st.write(f"- 基因标志物已填写: {marker_filled.sum()}/{len(df_export)}")
+                if '英文药名' in df_export.columns:
+                    en_filled = df_export['英文药名'].notna() & (df_export['英文药名'] != '')
+                    st.write(f"- 英文药名已填写: {en_filled.sum()}/{len(df_export)}")
             
             else:
                 # 其他情况正常导出
