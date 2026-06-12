@@ -217,9 +217,9 @@ def extract_page_data(page: Page, list_type: str, start_num: int) -> list:
     drugs = []
 
     try:
-        # 使用 JS 获取所有数据行的信息
+        # 使用 JS 获取所有数据行的信息 - 根据名单类型使用不同的列索引
         row_info = page.evaluate("""
-            () => {
+            (listType) => {
                 const tables = document.querySelectorAll('table');
                 let dataTable = null;
                 
@@ -229,7 +229,11 @@ def extract_page_data(page: Page, list_type: str, start_num: int) -> list:
                     if (rows.length > 5) {
                         const header = rows[0].innerText;
                         if (header.indexOf('序号') >= 0 && header.indexOf('药品名称') >= 0) {
-                            dataTable = { index: i, rows: [] };
+                            // 判断是优先审评还是突破性治疗
+                            const isPriority = header.indexOf('承办日期') >= 0;
+                            
+                            dataTable = { index: i, rows: [], listType: listType, isPriority: isPriority };
+                            
                             for (let j = 1; j < rows.length; j++) {
                                 const cells = rows[j].querySelectorAll('td');
                                 if (cells.length >= 4) {
@@ -241,9 +245,22 @@ def extract_page_data(page: Page, list_type: str, start_num: int) -> list:
                                         applicant: cells[3]?.innerText?.trim() || '',
                                         ondblclick: rows[j].getAttribute('ondblclick') || ''
                                     };
-                                    if (cells.length >= 6) {
-                                        rowData.appDate = cells[5]?.innerText?.trim() || '';
+                                    
+                                    // 根据表格类型确定申请日期的列索引
+                                    if (isPriority) {
+                                        // 优先审评：序号,受理号,药品名称,注册申请人,承办日期,申请日期,...
+                                        // 申请日期在 cells[5]
+                                        if (cells.length >= 6) {
+                                            rowData.appDate = cells[5]?.innerText?.trim() || '';
+                                        }
+                                    } else {
+                                        // 突破性治疗：序号,受理号,药品名称,注册申请人,申请日期,...
+                                        // 申请日期在 cells[4]
+                                        if (cells.length >= 5) {
+                                            rowData.appDate = cells[4]?.innerText?.trim() || '';
+                                        }
                                     }
+                                    
                                     dataTable.rows.push(rowData);
                                 }
                             }
@@ -253,7 +270,7 @@ def extract_page_data(page: Page, list_type: str, start_num: int) -> list:
                 }
                 return dataTable;
             }
-        """)
+        """, list_type)
 
         if not row_info or not row_info.get('rows'):
             logger.warning("    未找到数据表格")
@@ -346,73 +363,120 @@ def get_drug_indication(page: Page, list_type: str, row_idx: int) -> str:
         """, [list_type, row_idx])
 
         # 等待弹窗加载
-        time.sleep(2)
+        time.sleep(3)
 
-        # 提取详情内容
+        # 提取详情内容 - 改进的逻辑
         detail = page.evaluate("""
             ([listType]) => {
+                let indication = '';
+                
+                // 方法1: 根据名单类型查找对应的详情表格
                 let detailTable = null;
-                let detailId = '';
-                
                 if (listType === '优先审评') {
-                    detailId = 'reviewTaskPublicityDetail';
-                } else if (listType === '突破性治疗') {
-                    detailId = 'breakthroughTherapyDetail';
-                }
-                
-                // 查找详情表格
-                let targetTable = null;
-                if (detailId) {
-                    const detailDiv = document.getElementById(detailId);
-                    if (detailDiv) {
-                        targetTable = detailDiv.querySelector('table');
-                    }
-                }
-                
-                if (!targetTable) {
-                    // 备用：查找所有表格
+                    // 优先审评详情表格
                     const tables = document.querySelectorAll('table');
                     for (let i = 0; i < tables.length; i++) {
-                        const header = tables[i].innerText;
-                        if (header.indexOf('拟定适应症') >= 0) {
-                            targetTable = tables[i];
+                        const tableText = tables[i].innerText;
+                        if (tableText.indexOf('优先审评公示详细信息') >= 0) {
+                            detailTable = tables[i];
+                            break;
+                        }
+                    }
+                } else if (listType === '突破性治疗') {
+                    // 突破性治疗详情表格
+                    const tables = document.querySelectorAll('table');
+                    for (let i = 0; i < tables.length; i++) {
+                        const tableText = tables[i].innerText;
+                        if (tableText.indexOf('突破性治疗申请公示详细信息') >= 0) {
+                            detailTable = tables[i];
                             break;
                         }
                     }
                 }
                 
-                if (!targetTable) return { success: false, error: '未找到详情表格' };
-                
-                // 提取适应症
-                let indication = '';
-                const rows = targetTable.querySelectorAll('tr');
-                for (let i = 0; i < rows.length; i++) {
-                    const text = rows[i].innerText;
-                    if (text.indexOf('拟定适应症') >= 0 || text.indexOf('功能主治') >= 0) {
-                        const cells = rows[i].querySelectorAll('td');
-                        for (let j = 0; j < cells.length; j++) {
-                            const cellText = cells[j].innerText.trim();
-                            if (cellText.indexOf('拟定适应症') < 0 && cellText) {
-                                indication = cellText;
-                                break;
-                            }
-                        }
-                        // 如果没找到，看下一行
-                        if (!indication && i + 1 < rows.length) {
-                            const nextCells = rows[i + 1].querySelectorAll('td');
-                            for (let j = 0; j < nextCells.length; j++) {
-                                const cellText = nextCells[j].innerText.trim();
-                                if (cellText) {
+                // 从详情表格中提取适应症
+                if (detailTable) {
+                    const rows = detailTable.querySelectorAll('tr');
+                    for (let i = 0; i < rows.length; i++) {
+                        const rowText = rows[i].innerText;
+                        // 查找包含"拟定适应症"或"功能主治"的行
+                        if (rowText.indexOf('拟定适应症') >= 0 || rowText.indexOf('功能主治') >= 0 || rowText.indexOf('适应症') >= 0) {
+                            const cells = rows[i].querySelectorAll('td, th');
+                            for (let j = 0; j < cells.length; j++) {
+                                const cellText = cells[j].innerText.trim();
+                                // 跳过包含关键字的单元格
+                                if (cellText.indexOf('拟定适应症') < 0 && 
+                                    cellText.indexOf('功能主治') < 0 && 
+                                    cellText.indexOf('适应症') < 0 &&
+                                    cellText.length > 5) {
                                     indication = cellText;
                                     break;
                                 }
                             }
+                            // 如果当前行没找到，检查下一行
+                            if (!indication && i + 1 < rows.length) {
+                                const nextCells = rows[i + 1].querySelectorAll('td');
+                                for (let j = 0; j < nextCells.length; j++) {
+                                    const cellText = nextCells[j].innerText.trim();
+                                    if (cellText.length > 5) {
+                                        indication = cellText;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (indication) break;
                         }
-                        break;
                     }
                 }
                 
-                // 尝试关闭弹窗（通过Esc）
+                // 方法2: 如果还没找到，从整个页面文本中查找
+                if (!indication || indication === '理由及依据') {
+                    const allText = document.body.innerText;
+                    const indicationKeywords = ['拟定适应症', '功能主治', '适应症：', '适应症:', '拟用于'];
+                    
+                    for (const keyword of indicationKeywords) {
+                        const idx = allText.indexOf(keyword);
+                        if (idx >= 0) {
+                            // 提取关键字后的内容
+                            let text = allText.substring(idx + keyword.length);
+                            // 清理到下一个常见分隔符
+                            const stopChars = ['\\n\\n', '\\n', '理由', '审评结论', '备注', '主要研究'];
+                            let minIdx = text.length;
+                            for (const char of stopChars) {
+                                const charIdx = text.indexOf(char);
+                                if (charIdx >= 0 && charIdx < minIdx) {
+                                    minIdx = charIdx;
+                                }
+                            }
+                            text = text.substring(0, minIdx).trim();
+                            
+                            if (text.length > 5 && text !== '理由及依据') {
+                                indication = text;
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                // 清理最终的适应症文本
+                if (indication) {
+                    // 移除"理由及依据"等无用内容
+                    const stopWords = ['理由及依据', '审评结论', '品种基本信息', '主要研究结果', '备注', '无'];
+                    for (const word of stopWords) {
+                        const idx = indication.indexOf(word);
+                        if (idx > 0 && indication.length - idx < 100) {
+                            indication = indication.substring(0, idx);
+                        }
+                    }
+                    indication = indication.trim();
+                    
+                    // 截断到合理长度
+                    if (indication.length > 500) {
+                        indication = indication.substring(0, 500);
+                    }
+                }
+                
+                // 尝试关闭弹窗
                 try {
                     if (typeof layer !== 'undefined' && layer.closeAll) {
                         layer.closeAll();
@@ -425,7 +489,11 @@ def get_drug_indication(page: Page, list_type: str, row_idx: int) -> str:
 
         if detail.get('success'):
             indication = detail.get('indication', '')
-
+        
+        # 如果获取到的内容太短或没用，尝试记录但继续
+        if not indication or len(indication) < 5 or indication == '理由及依据':
+            logger.warning(f"获取到的适应症可能不正确: '{indication}'")
+            
         time.sleep(0.5)
 
     except Exception as e:

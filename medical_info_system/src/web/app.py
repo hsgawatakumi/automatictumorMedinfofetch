@@ -1145,9 +1145,7 @@ def show_export_page():
         data = system.db_manager.execute_query(query, tuple(params) if params else None)
         
         if data:
-            # 生成导出文件
             import pandas as pd
-            df = pd.DataFrame(data)
             
             # 文件名
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1161,23 +1159,55 @@ def show_export_page():
             )
             os.makedirs(full_exports_path, exist_ok=True)
             
-            # 根据格式导出
-            if export_format == "CSV":
-                file_path = os.path.join(full_exports_path, f"{filename}.csv")
-                df.to_csv(file_path, index=False, encoding='utf-8-sig')
-            elif export_format == "Excel":
+            # 对于CDE特殊品种，导出为Excel时有两个sheet
+            if data_type == "CDE特殊品种" and export_format == "Excel":
+                df = pd.DataFrame(data)
+                
+                # 分别筛选优先审评和突破性治疗
+                priority_df = df[df['drug_type'] == '优先审评'] if 'drug_type' in df.columns else df
+                breakthrough_df = df[df['drug_type'] == '突破性治疗'] if 'drug_type' in df.columns else pd.DataFrame()
+                
                 file_path = os.path.join(full_exports_path, f"{filename}.xlsx")
-                df.to_excel(file_path, index=False)
-            elif export_format == "JSON":
-                file_path = os.path.join(full_exports_path, f"{filename}.json")
-                df.to_json(file_path, orient='records', force_ascii=False)
+                
+                # 使用ExcelWriter写入多个sheet
+                with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+                    priority_df.to_excel(writer, sheet_name='优先审评', index=False)
+                    if not breakthrough_df.empty:
+                        breakthrough_df.to_excel(writer, sheet_name='突破性治疗', index=False)
+                
+                total_count = len(priority_df) + len(breakthrough_df)
+                st.success(f"导出成功！共 {total_count} 条记录")
+                st.info(f"优先审评: {len(priority_df)} 条, 突破性治疗: {len(breakthrough_df)} 条")
+                st.info(f"文件路径: {file_path}")
+                
+                # 显示预览
+                st.markdown("#### 数据预览 - 优先审评")
+                if not priority_df.empty:
+                    st.dataframe(priority_df.head(10), use_container_width=True)
+                if not breakthrough_df.empty:
+                    st.markdown("#### 数据预览 - 突破性治疗")
+                    st.dataframe(breakthrough_df.head(10), use_container_width=True)
             
-            st.success(f"导出成功！共 {len(data)} 条记录")
-            st.info(f"文件路径: {file_path}")
-            
-            # 显示预览
-            st.markdown("#### 数据预览")
-            st.dataframe(df.head(10), use_container_width=True)
+            else:
+                # 其他情况正常导出
+                df = pd.DataFrame(data)
+                
+                if export_format == "CSV":
+                    file_path = os.path.join(full_exports_path, f"{filename}.csv")
+                    df.to_csv(file_path, index=False, encoding='utf-8-sig')
+                elif export_format == "Excel":
+                    file_path = os.path.join(full_exports_path, f"{filename}.xlsx")
+                    df.to_excel(file_path, index=False)
+                elif export_format == "JSON":
+                    file_path = os.path.join(full_exports_path, f"{filename}.json")
+                    df.to_json(file_path, orient='records', force_ascii=False)
+                
+                st.success(f"导出成功！共 {len(data)} 条记录")
+                st.info(f"文件路径: {file_path}")
+                
+                # 显示预览
+                st.markdown("#### 数据预览")
+                st.dataframe(df.head(10), use_container_width=True)
         else:
             st.warning("没有符合条件的数据")
 
