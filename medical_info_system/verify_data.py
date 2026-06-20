@@ -1,32 +1,64 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""抽查突破性治疗药物数据准确性"""
+"""
+验证NMPA药物数据质量
+"""
+import sqlite3
 
-import csv
+db_path = 'data/medical_info.db'
+conn = sqlite3.connect(db_path)
+cursor = conn.cursor()
 
-csv_path = 'data/cde_all_drugs_fixed_v3.csv'
+print("=" * 60)
+print("  NMPA药物数据质量验证")
+print("=" * 60)
 
-print(f"抽查突破性治疗药物数据（前15条）:")
-print("=" * 100)
+# 1. 统计信息
+cursor.execute('SELECT COUNT(*) FROM approved_drugs WHERE regulatory_agency = "NMPA"')
+total = cursor.fetchone()[0]
 
-count = 0
-with open(csv_path, 'r', encoding='utf-8-sig') as f:
-    reader = csv.DictReader(f)
-    for row in reader:
-        if row.get('名单类型') == '突破性治疗' and count < 15:
-            count += 1
-            is_cancer = str(row.get('是否抗肿瘤', '')).strip().lower() in ['true', 'yes', '1', '是']
-            print(f"\n{count}. {row['药物名称']}")
-            print(f"   受理号: {row['受理号']}")
-            print(f"   申请日期: {row['申请日期']}")
-            print(f"   适应症: {row['拟定适应症'][:100]}...")
-            print(f"   是否抗肿瘤: {is_cancer}")
-            print(f"   申请人: {row['申请人'][:60]}")
+cursor.execute('SELECT COUNT(*) FROM approved_drugs WHERE regulatory_agency = "NMPA" AND indication IS NOT NULL AND indication != ""')
+with_indication = cursor.fetchone()[0]
 
-print(f"\n" + "=" * 100)
-print(f"抽查完成，共检查 {count} 条突破性治疗药物记录")
-print(f"\n关键验证点:")
-print(f"  ✓ 每条记录都有正确的受理号")
-print(f"  ✓ 每条记录都有正确的申请日期")
-print(f"  ✓ 每条记录都有从CDE公示中获取的具体适应症")
-print(f"  ✓ 抗肿瘤筛选正确（根据适应症关键词匹配）")
+cursor.execute('SELECT COUNT(*) FROM approved_drugs WHERE regulatory_agency = "NMPA" AND mechanism_of_action IS NOT NULL AND mechanism_of_action != ""')
+with_mechanism = cursor.fetchone()[0]
+
+cursor.execute('SELECT COUNT(*) FROM approved_drugs WHERE regulatory_agency = "NMPA" AND gene_marker IS NOT NULL AND gene_marker != ""')
+with_biomarker = cursor.fetchone()[0]
+
+print(f"\n[统计信息]")
+print(f"NMPA药物总数: {total}")
+print(f"有适应症信息: {with_indication} ({with_indication/total*100:.1f}%)")
+print(f"有作用机制信息: {with_mechanism} ({with_mechanism/total*100:.1f}%)")
+print(f"有生物标志物信息: {with_biomarker} ({with_biomarker/total*100:.1f}%)")
+
+# 2. 显示一些记录的样本
+cursor.execute('''
+    SELECT drug_name_cn, application_number, indication, mechanism_of_action, gene_marker
+    FROM approved_drugs
+    WHERE regulatory_agency = "NMPA" AND indication IS NOT NULL AND indication != ""
+    LIMIT 10
+''')
+
+print(f"\n[样例数据 - 10条]")
+for i, (name, app_no, indication, mechanism, biomarker) in enumerate(cursor.fetchall(), 1):
+    print(f"\n{i}. {name} ({app_no})")
+    if indication:
+        print(f"   适应症: {indication[:80]}..." if len(indication) > 80 else f"   适应症: {indication}")
+    if mechanism:
+        print(f"   机制: {mechanism[:60]}..." if len(mechanism) > 60 else f"   机制: {mechanism}")
+    if biomarker:
+        print(f"   生物标志物: {biomarker[:60]}..." if len(biomarker) > 60 else f"   生物标志物: {biomarker}")
+
+# 3. 显示缺失适应症的药物
+cursor.execute('''
+    SELECT drug_name_cn, application_number
+    FROM approved_drugs
+    WHERE regulatory_agency = "NMPA" AND (indication IS NULL OR indication = "")
+    LIMIT 20
+''')
+
+print(f"\n[缺失适应症的药物 - 前20条]")
+for i, (name, app_no) in enumerate(cursor.fetchall(), 1):
+    print(f"  {i}. {name} ({app_no})")
+
+conn.close()
+print("\n" + "=" * 60)

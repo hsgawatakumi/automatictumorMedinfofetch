@@ -1,0 +1,14 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "NIXPACKS",
+    "buildCommand": "pip install -r medical_info_system/requirements.txt"
+  },
+  "deploy": {
+    "startCommand": "streamlit run medical_info_system/src/web/app.py --server.port $PORT --server.headless true --server.address 0.0.0.0 --server.enableCORS false --server.enableXsrfProtection false --global.developmentMode false --browser.gatherUsageStats false",
+    "healthcheckPath": "/",
+    "healthcheckTimeout": 300,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10
+  }
+}

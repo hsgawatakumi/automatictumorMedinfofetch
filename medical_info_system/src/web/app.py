@@ -1159,8 +1159,67 @@ def show_export_page():
             )
             os.makedirs(full_exports_path, exist_ok=True)
             
+            # 对于已批准药物，导出为Excel时有两个sheet：FDA批准 & NMPA批准
+            if data_type == "已批准药物" and export_format == "Excel":
+                df = pd.DataFrame(data)
+
+                # 已批准药物的导出列（中英文双语列名）
+                approved_export_columns = {
+                    'regulatory_agency': '监管机构',
+                    'drug_name_en': '英文药名',
+                    'drug_name_cn': '中文药名',
+                    'generic_name_en': '英文通用名',
+                    'generic_name_cn': '中文通用名',
+                    'brand_name_en': '英文商品名',
+                    'brand_name_cn': '中文商品名',
+                    'applicant': '申请人',
+                    'application_number': '申请号',
+                    'approval_number': '批准号',
+                    'approval_date': '批准日期',
+                    'indication': '适应症',
+                    'dosage_form': '剂型',
+                    'route_of_administration': '给药途径',
+                    'mechanism_of_action': '作用机制',
+                    'companion_diagnosis': '伴随诊断',
+                    'cd_target': '伴随诊断靶点',
+                    'cd_product': '伴随诊断产品',
+                    'clinical_trial_data': '临床试验信息',
+                    'detail_url': '详情链接',
+                    'data_collection_time': '数据采集时间',
+                }
+
+                # 选择并重命名列
+                available_cols = [col for col in approved_export_columns.keys() if col in df.columns]
+                df_export = df[available_cols].rename(columns=approved_export_columns)
+
+                # 按监管机构拆分：FDA & NMPA
+                fda_df = df_export[df_export['监管机构'].str.contains('FDA', na=False, case=False)] if '监管机构' in df_export.columns else df_export
+                nmpa_df = df_export[df_export['监管机构'].str.contains('NMPA', na=False, case=False)] if '监管机构' in df_export.columns else pd.DataFrame()
+
+                file_path = os.path.join(full_exports_path, f"{filename}.xlsx")
+
+                # 使用ExcelWriter写入多个sheet
+                with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+                    if len(fda_df) > 0:
+                        fda_df.to_excel(writer, sheet_name='FDA批准', index=False)
+                    if len(nmpa_df) > 0:
+                        nmpa_df.to_excel(writer, sheet_name='NMPA批准', index=False)
+
+                total_count = len(fda_df) + len(nmpa_df)
+                st.success(f"导出成功！共 {total_count} 条记录")
+                st.info(f"FDA批准: {len(fda_df)} 条, NMPA批准: {len(nmpa_df)} 条")
+                st.info(f"文件路径: {file_path}")
+
+                # 显示预览
+                st.markdown("#### 数据预览 - FDA批准")
+                if len(fda_df) > 0:
+                    st.dataframe(fda_df.head(10), use_container_width=True)
+                if len(nmpa_df) > 0:
+                    st.markdown("#### 数据预览 - NMPA批准")
+                    st.dataframe(nmpa_df.head(10), use_container_width=True)
+
             # 对于CDE特殊品种，导出为Excel时有两个sheet
-            if data_type == "CDE特殊品种" and export_format == "Excel":
+            elif data_type == "CDE特殊品种" and export_format == "Excel":
                 df = pd.DataFrame(data)
                 
                 # CDE特殊品种的导出列（中英文双语列名）

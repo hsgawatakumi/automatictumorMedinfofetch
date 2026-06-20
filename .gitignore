@@ -35,27 +35,32 @@ build/
 *.db
 *.sqlite
 *.sqlite3
+medical_info_system/data/*.db
 
 # Log files
 *.log
 logs/
-data/logs/
+medical_info_system/data/logs/
 
 # Runtime data
-data/medical_info.db
-data/translation_cache.json
-data/translation_stats.json
-data/models/
+medical_info_system/data/translation_cache.json
+medical_info_system/data/translation_stats.json
+medical_info_system/data/models/
+medical_info_system/data/exports/
+medical_info_system/data/labels/
+medical_info_system/data/*.db
+medical_info_system/data/*.json
+medical_info_system/data/logs/
 
 # Upload files
 .uploads/
 
 # Export files
-data/exports/
 *.xlsx
 *.csv
-*.json
-!config/*.json
+medical_info_system/exports/
+medical_info_system/data/exports/
+medical_info_system/**/*.json
 
 # Translation model cache
 data/models/
@@ -76,3 +81,136 @@ Desktop.ini
 
 # pytest
 .pytest_cache/
+
+# Streamlit specific
+.streamlit/secrets.toml
+.streamlit/cache/
+
+# Railway specific
+.railway/
+
+# PDF files (downloaded from CDE)
+medical_info_system/cde_pdfs/
+medical_info_system/cde_pdfs_batch/
+medical_info_system/cde_pdfs_debug/
+medical_info_system/downloads/
+medical_info_system/downloads_test/
+medical_info_system/**/*.pdf
+
+# Temporary images and screenshots
+medical_info_system/**/*.png
+medical_info_system/**/*.jpg
+medical_info_system/**/*.jpeg
+
+# Temporary HTML files (from web scraping)
+medical_info_system/**/*.html
+
+# Temporary test and debugging scripts
+medical_info_system/analyze_*.py
+medical_info_system/debug_*.py
+medical_info_system/check_*.py
+medical_info_system/test_*.py
+medical_info_system/try_*.py
+medical_info_system/wait_*.py
+medical_info_system/find_api.py
+medical_info_system/robust_load.py
+medical_info_system/retry_analyze.py
+medical_info_system/requests_access.py
+medical_info_system/batch_process.py
+medical_info_system/call_open_detail.py
+medical_info_system/cde_*.py
+medical_info_system/collect_cde_*.py
+medical_info_system/collect_chictr_*.py
+medical_info_system/collect_final_missing.py
+medical_info_system/collect_missing_critical.py
+medical_info_system/collect_missing_drugs.py
+medical_info_system/collect_more_cde_drugs.py
+medical_info_system/collect_real_cde_drugs.py
+medical_info_system/complete_last_drugs.py
+medical_info_system/download_pdf*.py
+medical_info_system/enhancer_system.py
+medical_info_system/exact_extract.py
+medical_info_system/export_nmpa_anticancer*.py
+medical_info_system/final_export_anticancer.py
+medical_info_system/final_extract.py
+medical_info_system/final_verify.py
+medical_info_system/fix_*.py
+medical_info_system/fixed_parse.py
+medical_info_system/identify_non_onco.py
+medical_info_system/inspect_db.py
+medical_info_system/list_*.py
+medical_info_system/migrate_cde_to_approved.py
+medical_info_system/nmpa_enrichment_collector*.py
+medical_info_system/optimized_cde_crawler.py
+medical_info_system/parse_*.py
+medical_info_system/start_streamlit.py
+medical_info_system/update_approval_dates_optimized.py
+medical_info_system/update_cde_database.py
+medical_info_system/update_db_from_csv.py
+medical_info_system/update_drug_dates*.py
+medical_info_system/update_drug_names_and_dates.py
+medical_info_system/update_nmpa_indication.py
+medical_info_system/verify_db*.py
+medical_info_system/verify_export.py
+medical_info_system/verify_report.py
+medical_info_system/verify_update.py
+medical_info_system/verify_specific_drugs.py
+medical_info_system/check_remaining.py
+medical_info_system/check_missed*.py
+medical_info_system/analyze_*.py
+medical_info_system/check_field21.py
+medical_info_system/check_nmpa.py
+medical_info_system/check_nmpa_count.py
+medical_info_system/check_oncology_drugs.py
+medical_info_system/check_recent_drugs.py
+medical_info_system/check_ruimibrutinib.py
+medical_info_system/check_schema.py
+medical_info_system/check_update_result.py
+medical_info_system/check_user_file.py
+medical_info_system/clear_cache.py
+medical_info_system/analyze_tini_mab.py
+medical_info_system/analyze_unique.py
+medical_info_system/analyze_window_open.py
+medical_info_system/check_latest_export.py
+medical_info_system/check_axitinib.py
+medical_info_system/check_exclude_drugs.py
+medical_info_system/check_false_negatives.py
+medical_info_system/final_complete_verification.py
+medical_info_system/final_erdaftinib_full_check.py
+medical_info_system/recollect_breakthrough*.py
+medical_info_system/repair_breakthrough_data.py
+medical_info_system/redownload_erdaftinib.py
+medical_info_system/final_verification_after_cleanup.py
+medical_info_system/final_verification.py
+medical_info_system/diagnose_pagination.py
+medical_info_system/direct_query_erdaftinib.py
+medical_info_system/complete_erdaftinib_info.py
+medical_info_system/check_drug_dates.py
+medical_info_system/check_drug_names.py
+medical_info_system/check_drugs.py
+medical_info_system/check_duplicates.py
+medical_info_system/check_indication.py
+medical_info_system/check_detail.py
+medical_info_system/check_cde_ids.py
+medical_info_system/check_cde_special.py
+medical_info_system/check_clinical_trial.py
+medical_info_system/check_data.py
+medical_info_system/check_data_db.py
+medical_info_system/check_database.py
+medical_info_system/check_db.py
+medical_info_system/check_cache.py
+medical_info_system/check_approved_nmpa.py
+medical_info_system/check_2025_drugs.py
+medical_info_system/cde_api_analyzer.py
+medical_info_system/cde_batch_collector.py
+medical_info_system/cde_continue_collector.py
+medical_info_system/cde_final_collector.py
+medical_info_system/cde_full_collector*.py
+medical_info_system/cde_pdf_collector_v*.py
+medical_info_system/cde_pdf_batch*.py
+medical_info_system/complete_collection.py
+medical_info_system/check_missing_drugs.py
+medical_info_system/check_new_drugs_status.py
+medical_info_system/access_detail_page.py
+medical_info_system/access_postmarket.py
+medical_info_system/access_with_session.py
