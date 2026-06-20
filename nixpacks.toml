@@ -1,0 +1,17 @@
+[providers]
+python = false
+node = true
+
+[phases.setup]
+nixpkgsArchive = "9ad63890cc049eb55049b4ac4d73ddf4c66719a8"
+
+[phases.install]
+cmds = ["npm install"]
+dependsOn = ["setup"]
+
+[phases.build]
+cmds = ["echo Build preparation complete"]
+dependsOn = ["install"]
+
+[start]
+cmd = "node server.js"

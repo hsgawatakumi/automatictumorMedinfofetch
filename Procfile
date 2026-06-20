@@ -1,1 +1,0 @@
-web: streamlit run medical_info_system/src/web/app.py --server.port $PORT --server.headless true --server.address 0.0.0.0 --server.enableCORS false --server.enableXsrfProtection false --global.developmentMode false --browser.gatherUsageStats false

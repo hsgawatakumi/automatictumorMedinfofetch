@@ -1,0 +1,31 @@
+{
+  "name": "gene-drug-knowledge-base",
+  "version": "1.0.0",
+  "description": "基因药物知识库系统 - 抗肿瘤药物基因靶点与生物标志物查询平台 (Gene Drug Knowledge Base - Anti-cancer drug gene target and biomarker query platform)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node -e \"require('./server.js')\""
+  },
+  "keywords": [
+    "gene",
+    "drug",
+    "cancer",
+    "biomarker",
+    "pharmaceutical",
+    "knowledge-base",
+    "oncology",
+    "precision-medicine"
+  ],
+  "author": "Gene Drug Knowledge Base Team",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ejs": "^3.1.10",
+    "better-sqlite3": "^11.3.0"
+  }
+}

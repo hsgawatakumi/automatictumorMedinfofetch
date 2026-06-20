@@ -1,0 +1,193 @@
+<%
+var layoutFile = require('fs').readFileSync(__dirname + '/layout.ejs', 'utf8');
+var bodyContent = `
+    <!-- Hero Section -->
+    <section class="hero-section">
+        <div class="container text-center">
+            <h1 class="hero-title"><i class="bi bi-dna me-3"></i>基因药物知识库</h1>
+            <p class="hero-subtitle">
+                抗肿瘤药物 · 基因靶点 · 生物标志物 · 伴随诊断<br>
+                <span class="text-gradient-gold">精准医疗时代的药物信息查询平台</span>
+            </p>
+            <div class="search-box">
+                <form action="/drugs" method="GET" class="d-flex gap-2">
+                    <input type="text" name="q" class="form-control search-input" placeholder="搜索药物名称、靶点、基因、适应症...">
+                    <button type="submit" class="btn btn-warning search-btn">
+                        <i class="bi bi-search me-2"></i>搜索
+                    </button>
+                </form>
+            </div>
+        </div>
+    </section>
+
+    <!-- 统计卡片 -->
+    <section class="container mb-5">
+        <div class="row g-4">
+            <div class="col-md-3 col-6">
+                <div class="card stat-card p-4 h-100">
+                    <div class="d-flex align-items-center mb-2">
+                        <div class="icon-circle bg-primary text-white me-3">
+                            <i class="bi bi-capsule-pill"></i>
+                        </div>
+                        <div>
+                            <div class="stat-number"><%= stats.total_drugs %></div>
+                            <div class="text-muted small">收录药物总数</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="card stat-card p-4 h-100" style="border-left-color:#2e7d32">
+                    <div class="d-flex align-items-center mb-2">
+                        <div class="icon-circle text-white me-3" style="background:#2e7d32">
+                            <i class="bi bi-globe2"></i>
+                        </div>
+                        <div>
+                            <div class="stat-number" style="color:#2e7d32"><%= stats.fda_approved %></div>
+                            <div class="text-muted small">FDA已批准</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="card stat-card p-4 h-100" style="border-left-color:#ef6c00">
+                    <div class="d-flex align-items-center mb-2">
+                        <div class="icon-circle text-white me-3" style="background:#ef6c00">
+                            <i class="bi bi-bullseye"></i>
+                        </div>
+                        <div>
+                            <div class="stat-number" style="color:#ef6c00"><%= stats.unique_targets %></div>
+                            <div class="text-muted small">药物靶点</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="card stat-card p-4 h-100" style="border-left-color:#7b1fa2">
+                    <div class="d-flex align-items-center mb-2">
+                        <div class="icon-circle text-white me-3" style="background:#7b1fa2">
+                            <i class="bi bi-stars"></i>
+                        </div>
+                        <div>
+                            <div class="stat-number" style="color:#7b1fa2"><%= stats.new_drugs %></div>
+                            <div class="text-muted small">2020年后新批准</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 最新药物 -->
+    <section class="container mb-5">
+        <h2 class="section-title"><i class="bi bi-clock-history me-2"></i>最新批准药物</h2>
+        <div class="row g-4">
+            <% if (recentDrugs && recentDrugs.length > 0) { %>
+                <% recentDrugs.forEach(function(drug) { %>
+                    <div class="col-md-6 col-lg-3">
+                        <div class="card drug-card p-3 h-100">
+                            <div class="card-body">
+                                <h5 class="card-title mb-2"><%= drug.name_cn %></h5>
+                                <p class="card-text small text-muted mb-2"><%= drug.name_en %></p>
+                                <div class="mb-2">
+                                    <span class="drug-target-badge"><i class="bi bi-bullseye me-1"></i><%= (drug.molecular_target || '').substring(0, 25) %><%= (drug.molecular_target || '').length > 25 ? '...' : '' %></span>
+                                </div>
+                                <div class="mb-3">
+                                    <span class="chinese-badge"><%= drug.drug_type %></span>
+                                    <span class="badge bg-secondary"><%= drug.approval_year %>年</span>
+                                </div>
+                                <a href="/drug/<%= drug.id %>" class="btn btn-primary-custom w-100">
+                                    <i class="bi bi-info-circle me-1"></i>查看详情
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                <% }); %>
+            <% } else { %>
+                <div class="col-12">
+                    <div class="alert alert-info-custom p-4">
+                        <i class="bi bi-info-circle me-2"></i>暂无药物数据，数据库正在初始化...
+                    </div>
+                </div>
+            <% } %>
+        </div>
+    </section>
+
+    <!-- 快速分类 -->
+    <section class="container mb-5">
+        <h2 class="section-title"><i class="bi bi-filter-circle me-2"></i>快速分类查询</h2>
+        <div class="row g-3">
+            <div class="col-md-4">
+                <div class="card p-4 text-center h-100">
+                    <div class="icon-circle mx-auto mb-3 text-white" style="background:#1565c0; width:64px; height:64px; font-size:2rem;">
+                        <i class="bi bi-box"></i>
+                    </div>
+                    <h5 class="mb-3">小分子靶向药</h5>
+                    <p class="text-muted small mb-3">酪氨酸激酶抑制剂（TKI）类药物，包括 EGFR、ALK、ROS1、KRAS、BTK、PARP 等靶点</p>
+                    <a href="/drugs?type=小分子靶向药" class="btn btn-primary-custom">
+                        <i class="bi bi-search me-1"></i>浏览
+                    </a>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card p-4 text-center h-100">
+                    <div class="icon-circle mx-auto mb-3 text-white" style="background:#2e7d32; width:64px; height:64px; font-size:2rem;">
+                        <i class="bi bi-hexagon"></i>
+                    </div>
+                    <h5 class="mb-3">免疫检查点抑制剂</h5>
+                    <p class="text-muted small mb-3">PD-1/PD-L1/CTLA-4 单抗类药物，包括帕博利珠单抗、纳武利尤单抗、信迪利单抗等</p>
+                    <a href="/drugs?target=PD-1" class="btn btn-primary-custom">
+                        <i class="bi bi-search me-1"></i>浏览
+                    </a>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card p-4 text-center h-100">
+                    <div class="icon-circle mx-auto mb-3 text-white" style="background:#7b1fa2; width:64px; height:64px; font-size:2rem;">
+                        <i class="bi bi-magic"></i>
+                    </div>
+                    <h5 class="mb-3">抗体药物偶联物 (ADC)</h5>
+                    <p class="text-muted small mb-3">精准靶向化疗，包括德曲妥珠单抗（DS-8201）、维迪西妥单抗、戈沙妥珠单抗等</p>
+                    <a href="/drugs?type=抗体药物偶联物" class="btn btn-primary-custom">
+                        <i class="bi bi-search me-1"></i>浏览
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 生物标志物指南 -->
+    <section class="container mb-5">
+        <h2 class="section-title"><i class="bi bi-file-earmark-medical me-2"></i>关键生物标志物指南</h2>
+        <div class="row g-4">
+            <div class="col-md-3">
+                <div class="info-section">
+                    <h6 class="fw-bold mb-2"><i class="bi bi-activity me-2 text-primary"></i>EGFR 突变</h6>
+                    <p class="small text-muted mb-3">非小细胞肺癌最常见靶点，检测 19del、L858R、T790M、C797S、exon 20 ins</p>
+                    <a href="/drugs?target=EGFR" class="small text-decoration-none">查看药物 →</a>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="info-section">
+                    <h6 class="fw-bold mb-2"><i class="bi bi-activity me-2 text-success"></i>PD-L1 表达</h6>
+                    <p class="small text-muted mb-3">免疫治疗预测标志物，TPS/CPS 评分，MSI-H/dMMR 泛肿瘤适应症</p>
+                    <a href="/drugs?target=PD-L1" class="small text-decoration-none">查看药物 →</a>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="info-section">
+                    <h6 class="fw-bold mb-2"><i class="bi bi-activity me-2 text-warning"></i>HER2 表达/扩增</h6>
+                    <p class="small text-muted mb-3">乳腺癌、胃癌关键靶点，IHC 3+ 或 FISH+，ADC 药物新突破</p>
+                    <a href="/drugs?target=HER2" class="small text-decoration-none">查看药物 →</a>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="info-section">
+                    <h6 class="fw-bold mb-2"><i class="bi bi-activity me-2 text-danger"></i>BRCA/HRD</h6>
+                    <p class="small text-muted mb-3">PARP 抑制剂预测标志物，卵巢癌、乳腺癌、胰腺癌、前列腺癌适用</p>
+                    <a href="/drugs?target=PARP" class="small text-decoration-none">查看药物 →</a>
+                </div>
+            </div>
+        </div>
+    </section>
+`; %><%- layoutFile.replace('<%- body %>', bodyContent).replace("<title><%= typeof title !== 'undefined' ? title : '基因药物知识库' %></title>", '<title>首页 | 基因药物知识库</title>') %>
