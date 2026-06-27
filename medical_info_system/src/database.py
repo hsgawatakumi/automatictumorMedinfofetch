@@ -240,7 +240,27 @@ class DatabaseManager:
             UNIQUE(platform, trial_id)
         )
         """)
-        
+
+        # 创建临床试验状态变化历史表
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS clinical_trial_status_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trial_id TEXT NOT NULL,
+            platform TEXT NOT NULL DEFAULT 'ClinicalTrials.gov',
+            previous_status TEXT,
+            new_status TEXT NOT NULL,
+            change_reason TEXT,
+            change_date DATE,
+            enrollment_count INTEGER,
+            actual_start_date DATE,
+            actual_completion_date DATE,
+            results_posted_date DATE,
+            change_details TEXT,
+            collection_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(trial_id, new_status, change_date)
+        )
+        """)
+
         # 创建系统运行日志表
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS system_logs (
@@ -326,6 +346,8 @@ class DatabaseManager:
             "CREATE INDEX IF NOT EXISTS idx_clinical_trials_status ON clinical_trials(trial_status)",
             "CREATE INDEX IF NOT EXISTS idx_clinical_trials_gene ON clinical_trials(gene_marker)",
             "CREATE INDEX IF NOT EXISTS idx_clinical_trials_tumor ON clinical_trials(tumor_type)",
+            "CREATE INDEX IF NOT EXISTS idx_trial_status_trial_id ON clinical_trial_status_history(trial_id)",
+            "CREATE INDEX IF NOT EXISTS idx_trial_status_change_date ON clinical_trial_status_history(change_date)",
             "CREATE INDEX IF NOT EXISTS idx_system_logs_module ON system_logs(module_name)",
             "CREATE INDEX IF NOT EXISTS idx_system_logs_time ON system_logs(start_time)",
         ]

@@ -290,11 +290,18 @@ class ClinicalTrialsCollector:
         try:
             # 检查是否已存在
             existing = self.db_manager.execute_query(
-                "SELECT id FROM clinical_trials WHERE platform = ? AND trial_id = ?",
+                "SELECT id, trial_status FROM clinical_trials WHERE platform = ? AND trial_id = ?",
                 (trial['platform'], trial['trial_id'])
             )
-            
+
             if existing:
+                previous_status = existing[0].get('trial_status', '')
+                current_status = trial.get('trial_status', '')
+
+                # 检查状态变化
+                if previous_status and current_status and previous_status != current_status:
+                    self.track_status_change(trial['trial_id'], previous_status, current_status, trial)
+
                 # 更新
                 self.db_manager.execute_update(
                     'clinical_trials',
@@ -308,15 +315,152 @@ class ClinicalTrialsCollector:
                 self.db_manager.execute_insert('clinical_trials', trial)
                 self.records_added += 1
                 logger.debug(f"添加试验: {trial['trial_id']}")
-            
+
+                # 新试验也记录初始状态
+                self.track_status_change(
+                    trial['trial_id'],
+                    '',
+                    trial.get('trial_status', ''),
+                    trial,
+                    change_reason='Initial registration'
+                )
+
             self.records_processed += 1
             return True
-            
+
         except Exception as e:
             logger.error(f"保存试验失败: {e}")
             self.errors_count += 1
             return False
-    
+
+    def track_status_change(
+        self,
+        trial_id: str,
+        previous_status: str,
+        new_status: str,
+        trial_data: Dict = None,
+        change_reason: str = None
+    ) -> bool:
+        """
+        记录试验状态变化
+
+        Args:
+            trial_id: 试验ID
+            previous_status: 之前的状态
+            new_status: 新的状态
+            trial_data: 试验完整数据
+            change_reason: 变化原因
+
+        Returns:
+            是否成功
+        """
+        try:
+            if not new_status:
+                return False
+
+            history_record = {
+                'trial_id': trial_id,
+                'platform': 'ClinicalTrials.gov',
+                'previous_status': previous_status or '',
+                'new_status': new_status,
+                'change_reason': change_reason or '',
+                'change_date': datetime.now().strftime('%Y-%m-%d'),
+            }
+
+            # 从试验数据中提取额外信息
+            if trial_data:
+                history_record['enrollment_count'] = trial_data.get('enrollment', 0)
+                history_record['actual_start_date'] = trial_data.get('start_date', '')
+                history_record['actual_completion_date'] = trial_data.get('primary_completion_date', '')
+                history_record['results_posted_date'] = ''
+
+                # 检测完成/终止试验的结果发布日期
+                if new_status in ['Completed', 'Terminated', 'Approved with Termination']:
+                    results_url = trial_data.get('results_url', '')
+                    if results_url:
+                        history_record['results_posted_date'] = datetime.now().strftime('%Y-%m-%d')
+
+                # 生成变化详情
+                changes = []
+                if previous_status and previous_status != new_status:
+                    changes.append(f"状态: {previous_status} -> {new_status}")
+
+                enrollment = trial_data.get('enrollment', 0)
+                if enrollment:
+                    changes.append(f"入组人数: {enrollment}")
+
+                start_date = trial_data.get('start_date', '')
+                if start_date:
+                    changes.append(f"开始日期: {start_date}")
+
+                completion_date = trial_data.get('primary_completion_date', '')
+                if completion_date:
+                    changes.append(f"预计完成日期: {completion_date}")
+
+                history_record['change_details'] = '; '.join(changes) if changes else ''
+
+            # 检查是否已存在相同记录
+            existing = self.db_manager.execute_query(
+                "SELECT id FROM clinical_trial_status_history WHERE trial_id = ? AND new_status = ?",
+                (trial_id, new_status)
+            )
+
+            if not existing:
+                self.db_manager.execute_insert('clinical_trial_status_history', history_record)
+                logger.info(f"记录状态变化: {trial_id} {previous_status} -> {new_status}")
+                return True
+            else:
+                logger.debug(f"状态记录已存在: {trial_id} {new_status}")
+                return False
+
+        except Exception as e:
+            logger.error(f"记录状态变化失败: {e}")
+            return False
+
+    def get_trial_status_history(self, trial_id: str) -> List[Dict]:
+        """
+        获取试验状态历史
+
+        Args:
+            trial_id: 试验ID
+
+        Returns:
+            状态历史列表
+        """
+        try:
+            history = self.db_manager.execute_query(
+                """SELECT * FROM clinical_trial_status_history
+                   WHERE trial_id = ?
+                   ORDER BY collection_time DESC""",
+                (trial_id,)
+            )
+            return history
+        except Exception as e:
+            logger.error(f"获取状态历史失败: {e}")
+            return []
+
+    def get_recent_status_changes(self, days: int = 7) -> List[Dict]:
+        """
+        获取最近的状态变化
+
+        Args:
+            days: 最近天数
+
+        Returns:
+            状态变化列表
+        """
+        try:
+            changes = self.db_manager.execute_query(
+                """SELECT * FROM clinical_trial_status_history
+                   WHERE collection_time >= datetime('now', '-' || ? || ' days')
+                   ORDER BY collection_time DESC""",
+                (days,)
+            )
+            return changes
+        except Exception as e:
+            logger.error(f"获取最近状态变化失败: {e}")
+            return []
+
     def collect(self, max_pages: int = 5) -> Dict:
         """
         采集临床试验数据
