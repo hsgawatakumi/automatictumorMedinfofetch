@@ -854,7 +854,7 @@ def show_data_page():
         st.markdown("### CDE优先审评/突破性治疗品种")
         
         cde_drugs = system.db_manager.execute_query(
-            "SELECT * FROM cde_special_drugs ORDER BY application_date DESC LIMIT 100"
+            "SELECT * FROM cde_special_drugs ORDER BY id DESC LIMIT 100"
         )
         
         if cde_drugs:
@@ -1145,8 +1145,6 @@ def show_export_page():
         data = system.db_manager.execute_query(query, tuple(params) if params else None)
         
         if data:
-            import pandas as pd
-            
             # 文件名
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"{table_name}_{timestamp}"
@@ -1357,13 +1355,6 @@ def show_status_page():
             'desc': '通过ClinicalTrials.gov API采集抗肿瘤药物临床试验信息',
             'collector_available': 'clinical_trials' in system.collectors,
         },
-        {
-            'name': '会议摘要采集',
-            'key': 'conference_abstracts',
-            'icon': '📣',
-            'desc': '采集ASCO/ESMO/AACR等肿瘤学会议摘要',
-            'collector_available': 'conference_abstracts' in system.collectors,
-        },
     ]
     
     # 使用3列布局显示按钮
@@ -1375,7 +1366,7 @@ def show_status_page():
                 with cols[j]:
                     st.markdown(f"**{mod['icon']} {mod['name']}**")
                     st.caption(mod['desc'])
-                    
+
                     if mod['collector_available']:
                         if st.button(
                             f"▶️ 运行{mod['name']}",
@@ -1385,7 +1376,7 @@ def show_status_page():
                         ):
                             with st.spinner(f"正在运行 {mod['name']} 采集任务，请稍候..."):
                                 result = system.run_collector(mod['key'])
-                            
+
                             if result['success']:
                                 st.success(
                                     f"✅ {mod['name']} 采集完成！\n"
@@ -1407,6 +1398,214 @@ def show_status_page():
                             disabled=True
                         )
                         st.caption("🚧 采集模块开发中，敬请期待")
+
+    st.markdown("---")
+
+    # 会议摘要PDF上传采集（独立模块）
+    st.markdown("### 📣 会议摘要PDF采集")
+    st.info(
+        "💡 上传肿瘤学术年会（如CSCO、ASCO、ESMO、AACR等）的摘要合集PDF文件，"
+        "系统将自动提取其中的抗肿瘤靶向药物及相关基因标志物有效性研究信息，"
+        "并生成规范化的Excel报告。支持文字版PDF和图片扫描版PDF（OCR识别）。"
+    )
+
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        conference_name = st.selectbox(
+            "选择会议类型",
+            ["自动识别", "ASCO", "ESMO", "AACR", "CSCO", "WCLC", "ASH", "SGO", "其他"],
+            key="conference_select",
+            help="选择会议类型有助于提高提取准确率"
+        )
+
+        uploaded_file = st.file_uploader(
+            "上传会议摘要PDF文件",
+            type=["pdf"],
+            accept_multiple_files=False,
+            key="conference_pdf_upload",
+            help="支持文字版PDF和图片扫描版PDF，单个文件最大200MB"
+        )
+
+    with col2:
+        st.markdown("**提取选项**")
+        extract_drugs = st.checkbox("提取抗肿瘤药物", value=True, key="opt_drugs")
+        extract_genes = st.checkbox("提取基因标志物", value=True, key="opt_genes")
+        extract_study = st.checkbox("提取研究信息", value=True, key="opt_study")
+        ocr_enabled = st.checkbox("启用OCR（图片PDF）", value=False, key="opt_ocr")
+
+    if uploaded_file is not None:
+        st.info(f"已选择文件: {uploaded_file.name} ({uploaded_file.size / 1024 / 1024:.1f} MB)")
+
+        if st.button("🚀 开始解析PDF并生成报告", type="primary", use_container_width=True, key="btn_parse_pdf"):
+            import tempfile
+            from src.collectors.conference_pdf_extractor import ConferencePDFExtractor
+            from io import BytesIO
+
+            with st.status("正在处理PDF文件...", expanded=True) as status:
+                try:
+                    st.write("📁 保存上传文件...")
+                    temp_dir = tempfile.mkdtemp(prefix="conference_pdf_")
+                    temp_pdf_path = os.path.join(temp_dir, uploaded_file.name)
+
+                    with open(temp_pdf_path, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+
+                    st.write("🔍 初始化提取器...")
+                    extractor = ConferencePDFExtractor()
+
+                    conf_name = conference_name if conference_name != "自动识别" else None
+
+                    st.write("📖 提取文本内容...")
+                    text = extractor.extract_text_from_pdf(temp_pdf_path)
+
+                    if len(text.strip()) < 500 and ocr_enabled:
+                        st.write("🖼️ 文字内容过少，启用OCR识别...")
+                        text = extractor.extract_text_from_pdf_images(temp_pdf_path)
+
+                    st.write(f"📝 文本提取完成，共 {len(text)} 字符")
+
+                    if conference_name == "自动识别":
+                        detected = extractor.identify_conference(text)
+                        st.write(f"🏛️ 识别会议类型: {detected}")
+                        conf_name = detected
+
+                    st.write("🔬 提取摘要数据...")
+                    abstracts = extractor.extract_abstracts(text)
+
+                    if not abstracts:
+                        st.write("⚠️ 未检测到标准摘要格式，将全文作为单篇处理")
+                        abstracts = [{'number': '1', 'text': text, 'source_file': uploaded_file.name}]
+
+                    st.write(f"📊 提取到 {len(abstracts)} 个摘要，正在分析...")
+
+                    results = []
+                    progress_bar = st.progress(0)
+
+                    for idx, abstract in enumerate(abstracts):
+                        abstract['source_file'] = uploaded_file.name
+                        processed = extractor.process_abstract(abstract, conf_name)
+                        if processed:
+                            results.append(processed)
+                        progress_bar.progress((idx + 1) / len(abstracts))
+
+                    st.write(f"✅ 解析完成，提取到 {len(results)} 条有效抗肿瘤研究记录")
+
+                    if results:
+                        df = pd.DataFrame(results)
+
+                        columns_order = [
+                            'conference_name', 'conference_year', 'abstract_number',
+                            'drug_name', 'target_gene', 'tumor_type', 'tumor_type_cn',
+                            'study_phase', 'sample_size', 'efficacy_data',
+                            'title_en', 'title_cn', 'authors', 'presentation_type',
+                            'session_name', 'key_findings_en', 'key_findings_cn',
+                            'url', 'source_file', 'data_collection_time'
+                        ]
+
+                        columns_map = {
+                            'conference_name': '会议名称',
+                            'conference_year': '会议年份',
+                            'abstract_number': '摘要编号',
+                            'drug_name': '药物名称',
+                            'target_gene': '目标基因/靶点',
+                            'tumor_type': '肿瘤类型(英)',
+                            'tumor_type_cn': '肿瘤类型(中)',
+                            'study_phase': '研究阶段',
+                            'sample_size': '样本量',
+                            'efficacy_data': '疗效数据',
+                            'title_en': '标题(英)',
+                            'title_cn': '标题(中)',
+                            'authors': '作者',
+                            'presentation_type': '报告类型',
+                            'session_name': '分会场',
+                            'key_findings_en': '主要发现(英)',
+                            'key_findings_cn': '主要发现(中)',
+                            'url': '链接',
+                            'source_file': '来源文件',
+                            'data_collection_time': '采集时间',
+                        }
+
+                        df_display = df[columns_order].rename(columns=columns_map)
+
+                        status.update(label="🎉 解析完成！", state="complete", expanded=False)
+
+                        st.markdown(f"### 📊 解析结果概览")
+                        st.metric("提取记录数", len(results))
+
+                        if 'drug_name' in df.columns:
+                            all_drugs = []
+                            for drugs in df['drug_name'].dropna():
+                                if drugs:
+                                    all_drugs.extend([d.strip() for d in drugs.split(',') if d.strip()])
+                            if all_drugs:
+                                from collections import Counter
+                                drug_counter = Counter(all_drugs)
+                                st.markdown("**Top 10 提及药物:**")
+                                top_drugs = drug_counter.most_common(10)
+                                drug_df = pd.DataFrame(top_drugs, columns=['药物名称', '提及次数'])
+                                st.bar_chart(drug_df.set_index('药物名称'))
+
+                        st.markdown("### 📋 详细数据")
+                        st.dataframe(df_display, use_container_width=True)
+
+                        output = BytesIO()
+                        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                            df_display.to_excel(writer, sheet_name='提取结果', index=False)
+
+                            summary_sheet = pd.DataFrame({
+                                '统计项': ['总记录数', '会议名称', '会议年份', '来源文件'],
+                                '数值': [
+                                    len(results),
+                                    conf_name,
+                                    datetime.now().year,
+                                    uploaded_file.name
+                                ]
+                            })
+                            summary_sheet.to_excel(writer, sheet_name='统计概览', index=False)
+
+                        excel_data = output.getvalue()
+
+                        st.download_button(
+                            label="📥 下载Excel报告",
+                            data=excel_data,
+                            file_name=f"{conf_name}_抗肿瘤药物研究汇总_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True,
+                            type="primary",
+                            key="download_excel"
+                        )
+
+                        db_save = st.checkbox("同时保存到数据库", value=True, key="save_to_db")
+                        if db_save:
+                            stats = extractor.save_to_database(system.db_manager, results)
+                            st.info(
+                                f"💾 数据库保存完成: "
+                                f"新增 {stats.get('added', 0)} 条, "
+                                f"更新 {stats.get('updated', 0)} 条, "
+                                f"错误 {stats.get('errors', 0)} 条"
+                            )
+                    else:
+                        status.update(label="⚠️ 未提取到有效数据", state="error", expanded=True)
+                        st.warning(
+                            "未能从PDF中提取到抗肿瘤药物相关研究信息。\n"
+                            "可能的原因：\n"
+                            "1. PDF为图片扫描版，请启用OCR选项\n"
+                            "2. 摘要格式不标准，建议手动检查\n"
+                            "3. 文档中确实不包含抗肿瘤药物相关内容"
+                        )
+
+                    try:
+                        os.remove(temp_pdf_path)
+                        os.rmdir(temp_dir)
+                    except Exception:
+                        pass
+
+                except Exception as e:
+                    status.update(label="❌ 处理失败", state="error", expanded=True)
+                    st.error(f"PDF解析失败: {str(e)}")
+                    import traceback
+                    with st.expander("查看详细错误信息"):
+                        st.code(traceback.format_exc())
     
     st.markdown("---")
     
