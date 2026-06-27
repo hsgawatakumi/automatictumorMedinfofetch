@@ -55,9 +55,15 @@ scheduler:
   cde_special: 0 5 * * *
   clinical_trials: 0 1 * * 2
   conference_abstracts: 0 6 * * *
+  crossref: 0 1 * * 1
   fda_approved: 0 2 * * *
   fda_nda: 0 3 * * *
   nmpa_approved: 0 4 * * *
+crossref:
+  mailto: research@medical-info.com
+  max_results: 100
+  request_delay: 1.0
+  user_agent: MedicalInfoCollector/1.0
 storage:
   database_path: data/medical_info.db
   exports_path: data/exports/
@@ -397,7 +403,7 @@ translation:
   helsinki:
     cache_dir: data/models
     model_name: Helsinki-NLP/opus-mt-en-zh
-  provider: auto
+  provider: baidu
   stats_file: data/translation_stats.json
 tumor_types:
 - cn: 肺癌
